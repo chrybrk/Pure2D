@@ -1,0 +1,36 @@
+from pure.pure import *
+from pure.pure import Vector as vec
+
+game = Game()
+game.set_window_clear_color(color.JetBlack.value)
+game.create_surface_with_keeping_ratio(40)
+
+texture = Texture()
+texture.load_tilesheet("./assets/monochrome-transparent_packed.png")
+texture.load_texture_from_tilesheet(vec(400, 0), vec(16, 16))
+
+player = Sprite(vec(10, 10), tex = texture)
+# player.add_physics()
+
+# inputs = Input()
+# inputs.set_default_wasd_key()
+# inputs.set_default_camera_key()
+
+# camera = Camera2D(vec(0, 0), vec(1200, 700), target = player, inputs = inputs)
+# layer = Layer(player)
+
+def main_loop(dt):
+    print(int(clock.get_fps()))
+
+    sharedresource.renderer.add_drawable(player)
+
+    # sharedresource.window.get_surface().blit(player.tex.texture, player.position.value2())
+    # layer.run()
+
+# sharedresource.renderer.update_camera(camera)
+game.set_main_game_function(main_loop)
+game.run()
+
+px437hp100lx10x11
+pxplusibmcgathin
+mx437mbytepc230cga
