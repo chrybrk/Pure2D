@@ -4,9 +4,9 @@ from pygame.locals import *
 from enum import Enum
 from PIL import Image
 
-# TODO: Camera
-# TODO: Light
-# TODO: Verlet Integration
+# TODO: Camera []
+# TODO: Light [done]
+# TODO: Verlet Integration []
 
 # constants
 true = True; false = False; nil = None
@@ -29,6 +29,8 @@ class SharedResource(object):
         self.renderer = nil
         self.font = nil
         self.scene = nil
+        self.inputs = nil
+        self.camera = nil
 
 sharedresource = SharedResource()
 
@@ -42,6 +44,11 @@ class color(Enum):
     SlateGray = (112, 128, 144)
     LightSlateGray = (119, 136, 153)
     White = (255, 255, 255)
+
+class SpriteType(Enum):
+    STATIC = 0
+    DYNAMIC = 1
+    LIGHT = 2
 
 # Physics
 class Vector(object):
@@ -78,20 +85,33 @@ class Light2D:
         self.render_surface = pygame.Surface((size, size))
         self.render_surface.set_colorkey((0, 0, 0))
         self.pixel_shader_surface = self.pixel_shader()
-        self.display = pygame.Surface(sharedresource.window.get_surface().get_size())
-        self.dark = pygame.Surface(sharedresource.window.get_surface().get_size()).convert_alpha()
 
-    def render(self, x, y, global_light_color = (255, 255, 255), global_light_intensity = 0):
-        self.display.fill((0, 0, 0))
+    def global_light_display(global_light_color = (255, 255, 255), global_light_intensity = 0):
+        light_display = pygame.Surface(sharedresource.window.get_surface().get_size())
 
-        self.dark.fill((*global_light_color, global_light_intensity))
-        self.display.blit(self.dark, (0, 0))
+        dark = pygame.Surface(sharedresource.window.get_surface().get_size()).convert_alpha()
+        dark.fill((*global_light_color, global_light_intensity))
+
+        light_display.blit(dark, (0, 0))
+
+        return light_display
+
+    def global_light(light_display, color = (255, 255, 255), intensity = 0):
+        dark = pygame.Surface(sharedresource.window.get_surface().get_size()).convert_alpha()
+        dark.fill((*color, intensity))
+        light_display.blit(dark, (0, 0))
+
+    def render(light_display): sharedresource.window.get_surface().blit(light_display, (0, 0), special_flags=BLEND_RGBA_MULT)
+
+    def set_light_display(self, light_display): self.light_display = light_display
+
+    def fill(self):
+        self.light_display.fill((0, 0, 0))
 
         self.render_surface.fill((0, 0, 0))
         self.render_surface.blit(self.pixel_shader_surface, (0, 0))
 
-        self.display.blit(self.render_surface, (x - self.radius, y - self.radius), special_flags=BLEND_RGBA_ADD)
-        sharedresource.window.get_surface().blit(self.display, (0, 0), special_flags=BLEND_RGBA_MULT)
+    def locate_light(self, x, y): self.light_display.blit(self.render_surface, (x - self.radius, y - self.radius), special_flags=BLEND_RGBA_ADD)
 
     def pixel_shader(self):
         array = np.full((self.size, self.size, 3), self.color, dtype=np.uint16)
@@ -142,11 +162,11 @@ class Light2D:
 
         return pygame.surfarray.make_surface(array)
 
-
 class Texture:
-    def __init__(self, texture_path: str = nil) -> nil:
+    def __init__(self, texture_path: str = nil, scale: Vector = nil) -> nil:
         self.texture_path = texture_path
         self.texture = pygame.image.load(texture_path).convert_alpha() if self.texture_path else nil
+        if scale: self.texture = pygame.transform.scale(self.texture, scale.value2())
         self.flip_x = pygame.transform.flip(self.texture, true, false) if self.texture else nil
         self.flip_y = pygame.transform.flip(self.texture, false, true) if self.texture else nil
         self.tilesheet_path = nil
@@ -172,12 +192,16 @@ class Texture:
                 elements.append(tile)
             self.tiles.append(elements)
 
+# TODO: change dynamic drawing
+# TODO: create sprite to draw
+# TODO: a way to get sprite
 class TileEditor:
-    def __init__(self, csv_path: str, tilesheet_path: str, tile_size: Vector):
+    def __init__(self, csv_path: str, tilesheet_path: str, sprite_type: dict, tile_size: Vector, scale: Vector = nil):
         self.csv_path = csv_path
 
         self.tilesheet_path = tilesheet_path
-        self.tile_size = tile_size
+        self.scale = scale
+        self.tile_size = tile_size if not self.scale else self.scale
         self.texture = Texture()
         self.texture.load_tilesheet(self.tilesheet_path)
 
@@ -191,34 +215,36 @@ class TileEditor:
 
             self.map.append(clms)
 
-        for i in range(len(self.map)):
-            for j in range(len(self.map[i])):
-                if self.map[i][j] not in self.unq: self.unq.append(self.map[i][j])
-
-        self.unq.pop(self.unq.index(-1))
-
-        self.textures = {}
-        for e in self.unq:
-            w = self.texture.image.size[0] // self.tile_size.x
-            h = self.texture.image.size[1] // self.tile_size.y
-            pos = Vector((e % w) * self.tile_size.x, (e // w) * tile_size.y)
-            self.textures[e] = self.texture.load_texture_from_tilesheet(pos, self.tile_size)
-
-
-        for i in range(len(self.map)):
-            for j in range(len(self.map[i])):
-                print("%4d" % (self.map[i][j]), end=" ")
-            print()
-
         self.sprites = []
-    def draw(self, wdn = 2):
+        self.textures = {}
         for i in range(len(self.map)):
             for j in range(len(self.map[i])):
-                if self.map[i][j] != -1:
-                    sharedresource.window.get_surface().blit(self.textures[self.map[i][j]], (j * (self.tile_size.x - wdn), i * (self.tile_size.y - wdn)))
+                if self.map[i][j] not in self.unq and self.map[i][j] != -1:
+
+                    self.unq.append(self.map[i][j])
+
+                    e = self.unq[::-1][0]
+                    w = self.texture.image.size[0] // self.tile_size.x
+                    h = self.texture.image.size[1] // self.tile_size.y
+                    pos = Vector((e % w) * self.tile_size.x, (e // w) * tile_size.y)
+                    self.textures[e] = self.texture.load_texture_from_tilesheet(pos, self.tile_size)
+                    if self.scale: self.textures[e] = pygame.transform.scale(self.textures[e], self.scale.value2())
+
+                if self.map[i][j] != -1: self.sprites.append(Sprite(Vector(j * self.tile_size.x + sharedresource.camera.position.x, i * self.tile_size.y + sharedresource.camera.position.y), tex = self.textures[self.map[i][j]]))
+
+                # if self.map[i][j] in sprite_type.keys():
+                #    match sprite_type[self.map[i][j]].value:
+                #        case 0:
+                #            if self.scale: self.static_type.append(Sprite(Vector(j * (self.scale.x), i * (self.scale.y)), tex = self.textures[e]))
+                #            else: self.static_type.append(Sprite(Vector(j * (self.tile_size.x), i * (self.tile_size.y)), tex = self.textures[e]))
+
+    def draw(self, wdn = 0, offset = Vector(0, 0)):
+        for i in range(len(self.sprites)):
+            self.sprites[i].position += offset
+            self.sprites[i].draw()
 
 class Collision:
-    def __init__(self, mask) -> nil:
+    def __init__(self, *mask) -> nil:
         self.top = false
         self.left = false
         self.bottom = false
@@ -229,7 +255,7 @@ class Collision:
 
     def check_collision(self, a, b, additive: Vector = nil):
         if additive: a.position += additive
-        return b.position.x - a.size.x <= a.position.x <= b.position.x + b.size.x and b.position.y - a.size.y <= a.position.y <= b.position.y + b.size.y
+        return a.position.x < b.position.x + b.size.x and a.position.x + a.size.x > b.position.x and a.position.y < b.position.y + b.size.y and a.position.y + a.size.y > b.position.y
 
     def check_collisions(self, a, *bs):
         for b in bs:
@@ -243,7 +269,7 @@ class Collision:
         self.right = false
 
         who_hit_target = []
-        self.lock_distance = 50
+        self.lock_distance = 20
 
         for b in self.mask:
             if self.check_collision(a, b): who_hit_target.append(b)
@@ -251,80 +277,34 @@ class Collision:
         self.collide = true if len(who_hit_target) > 0 else false
 
         for b in who_hit_target:
-            top = abs((b.position.y + b.size.y) - a.position.y)
-            left = abs(b.position.x - (a.position.x + a.size.x))
-            bottom = abs(b.position.y - (a.position.y + a.size.y))
-            right = abs((b.position.x + b.size.x) - a.position.x)
+            print(b.position)
 
-            self.top = true if top <= self.lock_distance else false
-            self.left = true if left <= self.lock_distance else false
-            self.bottom = true if bottom <= self.lock_distance else false
-            self.right = true if right <= self.lock_distance else false
-
-            if self.bottom: a.position.y = b.position.y - a.size.y
-
-class Physics:
-    def __init__(self) -> nil:
-
-        # properties
-        self.velocity = Vector(0, 0)
-
-        self.bounce = 0.0
-        self.gravity = 0.0
-        self.gravity_back = 0.0
-        self.friction = 0.0
-        self.jump_height = 0
-        self.max_jump = 0
-        self.max_speed = 0
-        self.mid_air = false
-
-        # objects
-        self.collision = Collision(nil)
-
-        # flags
-        self.g_flag = false
-        self.c_flag = false
-        self.r_flag = false
-
-    def add_gravity(self, gravity: int) -> nil:
-        self.g_flag = true
-        self.gravity = gravity
-
-    def add_friction(self, friction): self.friction = friction
-
-    def add_collision(self, *mask: object) -> nil:
-        self.c_flag = true
-        self.collision = Collision(mask)
-
-    def is_on_floor(self) -> int: return self.collision.bottom
-
-    def apply(self, sprite) -> nil:
-        # TODO: Celeste run movement
-        if self.g_flag:
-            dt = fpsLock(sharedresource.window.fps) / 1000
-            sprite.position.y = sprite.position.y + dt * self.velocity.y
-            self.velocity.y = self.velocity.y + dt * self.gravity
-
-        if self.c_flag:
-            self.collision.aabb(sprite)
-            if self.collision.bottom: self.velocity = Vector(0, 0)
-
-# Verlet Integration
-class Point: pass
-class Stick: pass
-class Forms: pass
+class Animation:
+    pass
 
 class Sprite:
-    def __init__(self, position: Vector, size: Vector = nil, color: tuple = color.Black.value, tex: object = nil) -> nil:
-        self.position = position
+    def __init__(self, position: Vector, size: Vector = nil, hit_box_size: Vector = nil, color: tuple = color.Black.value, tex: object = nil) -> nil:
+        self.position = position + sharedresource.camera.position
         self.color = color
         self.texture_object = Texture(tex) if isinstance(tex, str) else tex
         self.tex = self.texture_object.texture if isinstance(self.texture_object, Texture) else self.texture_object
         self.size = size if size else Vector(self.tex.get_size()[0], self.tex.get_size()[1])
-        self.physics = nil
+        self.hit_box_size = hit_box_size if hit_box_size else self.size
+        self.collision = nil
         self.animation = nil
         self.fixed_function = nil
         self.flipped = false
+
+    def get_hit_box(self):
+        return pygame.Rect(self.position.x, self.position.y, self.hit_box_size.x, self.hit_box_size.y)
+
+    def add_collision(self, mask): self.collision = Collision(*mask)
+
+    def is_on_floor(self): return self.collision.bottom
+
+    def update_texture(self, tex):
+        self.texture_object = Texture(tex) if isinstance(tex, str) else tex
+        self.tex = self.texture_object.texture if isinstance(self.texture_object, Texture) else self.texture_object
 
     def flip(self):
         if not self.flipped:
@@ -338,13 +318,10 @@ class Sprite:
 
     def update_fix_function(self, function): self.fixed_function = function
 
-    def init_physics(self) -> nil: self.physics = Physics()
-
     def sprite_filling(self, rows: int, cols: int):
         self.size = Vector(self.tex.get_size()[0] * cols, self.tex.get_size()[1] * rows)
 
     def draw(self):
-        if self.physics: self.physics.apply(self)
         if self.fixed_function: self.fixed_function()
 
         px, py = int(self.position.x), int(self.position.y)
@@ -413,6 +390,62 @@ class Input:
             new_position = position * speed
             new_position = new_position.scalar(fpsLock(sharedresource.window.fps) / 1000)
             sprite.position += new_position
+
+class CameraType(Enum):
+    TARGET_CENTERED = 0
+    BOX_CENTERED = 1
+
+class Camera:
+    def __init__(self):
+        self.target = nil
+        self.type = nil
+        self.box_size = nil
+        self.keyboard_speed = 0
+        self.mouse_speed = 0
+        self.offset = Vector(0, 0)
+        self.position = Vector(0, 0)
+
+    def init_target_centered(self, target):
+        self.target = target
+        self.type = CameraType.TARGET_CENTERED
+
+    def init_box_centered(self, box_size):
+        self.box_size = box_size
+        self.type = CameraType.BOX_CENTERED
+
+    def target_centered(self):
+        x, y = sharedresource.window.get_surface().get_size()
+        cx, cy = x / 2, y / 2
+
+        pos = Vector(cx, cy)
+        self.offset = pos - self.target.position
+
+    def get_offset(self):
+        if self.type:
+            match self.type.value:
+                case 0: self.target_centered()
+                case 1: self.box_centered()
+
+        return self.offset
+
+class Camera2D:
+    def __init__(self, layer, target: Sprite = nil) -> nil:
+        self.target = target
+        self.layer = layer
+        self.position = Vector(0, 0)
+        self.offset = Vector(0, 0)
+
+    def calculate_position(self, position: Vector) -> nil:
+        self.position = position
+        for sprite in self.layer:
+            sprite.position.x += self.position.x
+            sprite.position.y += self.position.y
+
+    def target_centered(self) -> nil:
+        cx = sharedresource.window.get_surface().get_size()[0] / 2
+        cy = sharedresource.window.get_surface().get_size()[1] / 2
+
+        self.calculate_position(Vector(cx - self.target.position.x, cy - self.target.position.y))
 
 class LoadConfig:
     def __init__(self) -> nil:
@@ -493,15 +526,14 @@ class Renderer:
     def render(self):
         for element in self.objects:
             x, y = sharedresource.window.get_surface().get_size()
+            offset = sharedresource.camera.get_offset()
 
-            if isinstance(element, TileEditor): element.draw()
+            if isinstance(element, TileEditor): element.draw(offset = offset)
             else:
                 size_w, size_h = element.size.value2() if isinstance(element.size, Vector) else (element.size, element.size)
                 if (element.position.x <= x and element.position.x + size_w >= 0) and (element.position.y <= y and element.position.y + size_h >= 0):
+                    element.position += offset
                     element.draw()
-
-                # FIXME: performance draw
-                elif isinstance(element, Sprite) and element.physics: element.physics.apply(element)
 
         self.objects = []
 
@@ -524,6 +556,8 @@ class Game:
         sharedresource.config = self.load_config
         sharedresource.font = Font()
         sharedresource.scene = Scene()
+        sharedresource.inputs = Input()
+        sharedresource.camera = Camera()
 
     def create_surface(self, size: Vector) -> nil: sharedresource.window.surface = pygame.Surface(size.value2())
 

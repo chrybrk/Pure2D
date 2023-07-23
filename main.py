@@ -1,126 +1,86 @@
-from pure.pure import *
-from pure.pure import Vector as vec
-from pure.pure import sharedresource as res
+from engine import *
+from engine import resource_manager as res
+from engine import Vector as vec
 
-# init
 game = Game()
 game.set_window_clear_color(color.JetBlack.value)
-game.create_surface_with_keeping_ratio(40)
-res.font.set_font_renderer("./assets/dogica.ttf", 8, color.White.value, 0)
+game.create_scale_surface(50)
+res.font.set_font_renderer("./assets/dogica.ttf", 16, color.White.value, 0)
 
-tile_editor = TileEditor("./assets/lvl0_map.csv", "./assets/monochrome-transparent_packed.png", vec(16, 16))
+res.input.set_key("left", K_a)
+res.input.set_key("right", K_d)
+res.input.set_key("up", K_w)
+res.input.set_key("down", K_s)
+res.input.set_key("jump", K_SPACE)
 
-input_system = Input()
-input_system.set_key("left", K_a)
-input_system.set_key("right", K_d)
-input_system.set_key("up", K_w)
-input_system.set_key("down", K_s)
-input_system.set_key("change_light", K_l)
-input_system.set_key("jump", K_SPACE)
+world_map = TileReader("./assets/test.csv", "./assets/pixel_art/test-player/final_player/tile/ground.png", nil, vec(32, 32))
 
-texture = Texture()
-texture.load_tilesheet("./assets/monochrome-transparent_packed.png")
+player = Sprite(vec(50, 100), texture = "./assets/pixel_art/test-player/final_player/main/main_sprite.png")
+res.camera.init_target_centered(player)
 
-platform_tex = texture.load_texture_from_tilesheet(vec(160, 272), vec(16, 16))
-platform = Sprite(vec(0, 200), tex = platform_tex)
-platform.sprite_filling(2, 50)
+res.collision.add_mask(player, *world_map.sprites)
 
-player_tex = texture.load_texture_from_tilesheet(vec(400, 0), vec(16, 16))
-player = Sprite(vec(200, 100), tex = "./assets/pixel_art/player.png")
-player.init_physics()
-player.physics.add_collision(platform)
+velocity = vec(0, 0)
+jump_buffer = 0
+movement = vec(0, 0)
+jump_bonus = true
 
-enemy_tex = texture.load_texture_from_tilesheet(vec(416, 0), vec(16, 16))
-enemy0 = Sprite(vec(230, 100), tex = enemy_tex)
-enemy1 = Sprite(vec(50, 50), tex = enemy_tex)
+def player_movement(dt):
+    global jump_buffer, movement, velocity, jump_bonus
 
-game_over = false
+    if res.input.is_key_held("left"): velocity.x = max(-6, velocity.x - 50 * dt)
+    if res.input.is_key_held("right"): velocity.x = min(6, velocity.x + 50 * dt)
+    if res.input.is_key_pressed("jump"): jump_buffer = 0.2
+    if res.input.is_any_key_up():
+        movement = vec(0, 0)
 
-bounce = 0.0
-gravity = 0.9
-gravity_back = 0.5
-friction = 0.999
-jump_height = 6
-max_jump = 8
-max_speed = 8
-mid_air = false
+    if res.input.is_key_pressed_up("left") or res.input.is_key_pressed_up("right"): velocity.x = 0
 
-old_position = vec(player.position.x, player.position.y)
-
-def player_movement():
-    global old_position, mid_air
-
-    dt = fpsLock(res.window.fps) / 1000
-
-    if input_system.is_key_held("right"):
-        player.unflip()
-        if player.position.x - old_position.x < 0: old_position.x = player.position.x
-        old_position.x = old_position.x - 0.5 if abs(player.position.x - old_position.x) < max_speed else player.position.x - max_speed
-    elif input_system.is_key_held("left"):
-        player.flip()
-        if player.position.x - old_position.x > 0: old_position.x = player.position.x
-        old_position.x = old_position.x + 0.5 if abs(player.position.x - old_position.x) < max_speed else player.position.x + max_speed
+    if not player.collision_bottom:
+        velocity.y = min(10, velocity.y + 50 * dt)
+        if jump_bonus and res.input.is_key_pressed("jump"):
+            velocity.y = 0
+            velocity.y -= 750 * dt
+            jump_bonus = false
+            jump_buffer = 0
     else:
-        new_position = vec.lerp(old_position, player.position, 0.85)
-        old_position.x = new_position.x
+        jump_bonus = true
+        if jump_buffer > 0:
+            velocity.y = 0
+            velocity.y -= 900 * dt
+            jump_buffer = 0
 
-    if player.physics.is_on_floor() or mid_air:
-        if input_system.is_key_held("jump"):
-            mid_air = true
-            if abs(player.position.y - old_position.y) < max_jump: old_position.y += jump_height
-            else: mid_air = false
-        else:
-            mid_air = false
-    else: old_position.y -= gravity_back
+    jump_buffer = abs(jump_buffer - dt) if jump_buffer > 0 else 0
 
-    vx = (player.position.x - old_position.x) * friction
-    vy = (player.position.y - old_position.y) * friction
+def function0(dt):
+    player_movement(dt)
+    frame_movement = movement + velocity
+    player.move(frame_movement)
 
-    old_position.x = player.position.x
-    old_position.y = player.position.y
+    offset = res.camera.get_offset()
+    offset = vec(1/20*offset.x, 1/20*offset.y)
+    if abs(offset.x) >= 1 or abs(offset.y) >= 1:
+        player.position += offset
+        world_map.update_offset(offset)
 
-    player.position.x += vx
-    player.position.y += vy
-    player.position.y += gravity
+    res.renderer.add_drawable(player, *world_map.sprites)
 
-    if (player.position.y > platform.position.y - player.size.y):
-        player.position.y = platform.position.y - player.size.y
-        old_position.y = player.position.y + vy * bounce
-    elif (player.position.y < 0):
-        player.position.y = 0
-        old_position.y = player.position.y + vy * bounce
+res.scene.add_state("0", function0)
+res.scene.set_state("0")
 
-
-player.update_fix_function(player_movement)
-
-def level0(dt):
-    global game_over
-    enemy0.position = Vector.lerp(player.position, enemy0.position, 0.03)
-    enemy1.position = Vector.lerp(player.position, enemy1.position, 0.01)
-
-    # if player.physics.collision.check_collisions(player, enemy0, enemy1): game_over = true
-    res.renderer.add_drawable(player, enemy0, enemy1, platform)
-
-def gameover(dt):
-    text = "Game Over"
-    res.font.draw(vec(res.window.get_surface().get_size()[0] / 2 - (len(text) * 4), res.window.get_surface().get_size()[1] / 2), text)
-
-def testing(dt):
-    tile_editor.draw()
-
-res.scene.add_state("level0", level0)
-res.scene.add_state("testing", testing)
-res.scene.add_state("gameover", gameover)
-res.scene.set_state("level0")
-
-a = Light2D(500, (167, 203, 143), 0.3)
+a = Light2D(500, (172, 172, 50), 0.5)
+light_display = Light2D.global_light_display()
+a.set_light_display(light_display)
 
 def main_loop(dt):
-    a.render(player.position.x, player.position.y, (178, 143, 203), 20)
+    a.fill()
+    Light2D.global_light(light_display, color = (200, 100, 100), intensity = 100)
+    # a.locate_light(*player.position.value2())
+    Light2D.render(light_display)
 
     res.font.draw(vec(0, 0), f"FPS:{int(clock.get_fps())}")
-    if game_over: res.scene.set_state("gameover")
+    res.font.draw(vec(0, 20), f"RND: { res.renderer.count }")
     res.scene.run()
 
-game.set_main_game_function(main_loop)
+game.set_function(main_loop)
 game.run()
