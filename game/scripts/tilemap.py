@@ -17,6 +17,26 @@ class Tilemap:
 
         return tiles
 
+    def extract(self, id_pairs, keep=false):
+        matches = []
+        for tile in self.offgrid_tiles.copy():
+            if (tile['type'], tile['variant']) in id_pairs:
+                matches.append(tile.copy())
+                if not keep:
+                    self.offgrid_tiles.remove(tile)
+                    
+        for loc in self.tilemap.copy():
+            tile = self.tilemap[loc]
+            if (tile['type'], tile['variant']) in id_pairs:
+                matches.append(tile.copy())
+                matches[-1]['position'] = matches[-1]['position'].copy()
+                matches[-1]['position'][0] *= self.tile_size
+                matches[-1]['position'][1] *= self.tile_size
+                if not keep:
+                    del self.tilemap[loc]
+
+        return matches
+
     def save(self, path):
         f = open(path, 'w')
         json.dump({ 'tilemap': self.tilemap, 'tile_size': self.tile_size, 'offgrid': self.offgrid_tiles }, f)
@@ -38,6 +58,12 @@ class Tilemap:
                 rects.append(pygame.Rect(tile['position'][0] * self.tile_size, tile['position'][1] * self.tile_size, self.tile_size, self.tile_size))
 
         return rects
+
+    def solid_check(self, position):
+        tile_loc = str(int(position[0] // self.tile_size)) + ';' + str(int(position[1] // self.tile_size))
+        if tile_loc in self.tilemap:
+            if self.tilemap[tile_loc]['type'] in PHYSICS_TILES:
+                return self.tilemap[tile_loc]
 
     def render(self, surface, offset = (0, 0)):
         for tile in self.offgrid_tiles:

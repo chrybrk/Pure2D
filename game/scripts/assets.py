@@ -4,8 +4,10 @@ class Assets:
     def __init__(self):
         self.assets = {}
     
-    def load_image(self, name, image_path):
-        self.assets[name] = pygame.image.load(image_path).convert_alpha()
+    def load_image(self, name, image_path, color_key = nil):
+        im = pygame.image.load(image_path).convert()
+        if color_key: im.set_colorkey(color_key)
+        self.assets[name] = im
 
     def load_images(self, name, image_path, color_key = nil):
         images = []
@@ -24,7 +26,7 @@ class Assets:
         
         return images
 
-    def create_animation(self, name, path, image_duration, loop = true, color_key = nil):
+    def create_animation(self, name, path, image_duration = 5, loop = true, color_key = nil):
         self.assets[name] = Animation(self.return_load_images(path, color_key), image_duration, loop)
 
     def get(self, name): return self.assets[name]

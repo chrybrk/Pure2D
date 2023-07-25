@@ -34,7 +34,8 @@ class Editor:
         self.scroll = [0, 0]
 
         self.assets = Assets()
-        self.tilemap = Tilemap(self, tile_size = 32)
+        self.tilemap = Tilemap(self)
+        self.tilemap.load('./map.json')
 
         self.font = Font()
         self.font.set_font_renderer("./assets/font/dogica.ttf", 8, (255, 255, 255), 0)
@@ -42,9 +43,11 @@ class Editor:
         self.game_data()
 
     def game_data(self):
-        # self.assets.load_images("grass", "./assets/images/tiles/grass")
-        # self.assets.load_images("stone", "./assets/images/tiles/stone")
-        self.assets.load_images("floor", "./assets/new_assets/floor")
+        self.assets.load_images("grass", "./assets/new_assets/grass", (0, 0, 0))
+        self.assets.load_images("stone", "./assets/images/tiles/stone", (0, 0, 0))
+        self.assets.load_images("decor", "./assets/images/tiles/decor", (0, 0, 0))
+        self.assets.load_images("large_decor", "./assets/images/tiles/large_decor", (0, 0, 0))
+        self.assets.load_images("spwaners", "./assets/images/tiles/spawners", (0, 0, 0))
 
         self.movement = [false, false, false, false]
 
@@ -75,6 +78,7 @@ class Editor:
         self.mouse_position = pygame.mouse.get_pos()
         self.mouse_position = (self.mouse_position[0] / RENDER_SCALE, self.mouse_position[1] / RENDER_SCALE)
         tile_position = (int((self.mouse_position[0] + self.scroll[0]) // self.tilemap.tile_size), int((self.mouse_position[1] + self.scroll[1]) // self.tilemap.tile_size))
+        self.font.draw(self.surface, (0, 10), f"X: {tile_position[0]}, Y: {tile_position[1]}")
 
         if self.ongrid:
             self.surface.blit(current_tile_image, (tile_position[0] * self.tilemap.tile_size - self.scroll[0], tile_position[1] * self.tilemap.tile_size - self.scroll[1]))
@@ -161,6 +165,8 @@ class Editor:
             fpsLock(self.fps)
 
         pygame.quit()
+        opt = input("do you wanna save the file? ")
+        if opt == 'y': self.tilemap.save('map.json')
         sys.exit()
 
 Editor().run()
